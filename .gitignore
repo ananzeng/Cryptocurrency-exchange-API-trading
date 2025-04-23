@@ -1,0 +1,8 @@
+# Environments
+.env
+
+# Logs
+log/
+
+# macOS specific files
+.DS_Store
