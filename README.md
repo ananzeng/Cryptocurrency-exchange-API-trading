@@ -32,12 +32,17 @@ To set up a virtual environment, follow these steps:
 
 ## Core Logic
 * API Volume Strategy  
-This project utilizes the APIs of two accounts to perform trading strategies. The core logic involves using the APIs to execute trades between the two accounts, effectively leveraging the differences in exchange rates or other market conditions to achieve profitable trades.
-本專案利用兩個帳號的API來執行交易策略。核心邏輯是利用API在兩個帳號之間執行交易，有效利用匯率差異或其他市場條件來實現盈利交易。
+This arbitrage algorithm utilizes APIs from two accounts to execute a trading strategy. The core logic detects the price spread between the best bid and best ask in the order book. If the spread is only one tick, it places simultaneous buy and sell orders on both sides to ensure immediate matching, executing the trade between the two accounts via API.
+本套利算法利用兩個帳號的API來執行交易策略。核心邏輯是偵測掛單簿的買一檔跟賣一檔的價差，如只差一個tick即會於買賣雙邊掛單，確保瞬間撮合，利用API在兩個帳號之間執行交易。  
+
+* Funding Fee Arbitrage  
+This algorithm detects a trading strategy based on the price spread between perpetual futures and spot markets within the same exchange. If the spread is smaller than a user-defined percentage, it executes a spot buy and a perpetual futures sell. This strategy is particularly suitable for funding rate arbitrage.
+本算法偵測同一個交易所內，永續合約與現貨價差的交易策略，如掛單簿價差小於使用者規定的百分比，則進行現貨買入，永續合約賣出，特別適合資金費率的套利。  
+
 * TBC
 ## Supported Exchanges
 
-| Exchange | API Volume Strategy   |
-|----------|----------|
-| bybit    | Supported|
-| backpack | Supported|
+| Exchange | API Volume Strategy   | Funding Fee Arbitrage | 
+|----------|----------|----------|
+| bybit    | Supported|Supported|
+| backpack | Supported|NotSupported|
