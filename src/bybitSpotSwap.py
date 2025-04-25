@@ -5,15 +5,15 @@ from pybit.unified_trading import HTTP
 from dotenv import load_dotenv
 import os
 import decimal
-
+from util.bybitUtil import getWalletBalance, getSymbolBalance
 # 讀取 .env 檔案
 load_dotenv()
 
 # 兩個不同 Bybit 帳戶(或子帳戶)的 API Key，從環境變數中讀取
-API_KEY_1 = os.getenv("API_KEY_1")
-API_SECRET_1 = os.getenv("API_SECRET_1")
-API_KEY_2 = os.getenv("API_KEY_2")
-API_SECRET_2 = os.getenv("API_SECRET_2")
+API_KEY_1 = os.getenv("BYBITAPIKEY1")
+API_SECRET_1 = os.getenv("APISECRET1")
+API_KEY_2 = os.getenv("BYBITAPIKEY2")
+API_SECRET_2 = os.getenv("APISECRET2")
 
 # 設定 logger
 log_dir = "log"
@@ -25,22 +25,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
     logging.StreamHandler()
 ])
 logger = logging.getLogger(__name__)
-
-def getWalletBalance(coinName, symbolWalletBalancelist):
-    for coin in symbolWalletBalancelist:
-        if coin['coin'] == coinName:
-            return coin['walletBalance']
-    return None  # 如果找不到該 coin，就回傳 None
-
-def getSymbolBalance(session, symbol):
-    walletBalance = session.get_wallet_balance(accountType="UNIFIED")
-    symbolWalletBalanceList = walletBalance['result']['list'][0]['coin']
-    
-    if symbol != "USDT":
-        symbol = symbol.replace("USDT", "")
-
-    symbolWalletBalance = getWalletBalance(symbol, symbolWalletBalanceList)
-    return symbolWalletBalance
 
 def main():
     # 初始化 session1, session2
