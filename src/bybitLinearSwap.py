@@ -5,15 +5,19 @@ from pybit.unified_trading import HTTP
 from dotenv import load_dotenv
 import os
 import decimal
+import math
+from util.bybitUtil import (
+    getSymbolBalance, 
+    getLinearOrderBookData, 
+    getSpotOrderBookData,
+    getSpotTradingParams,
+    getLinearTradingParams
+)
 
-# 讀取 .env 檔案
 load_dotenv()
-
-# 兩個不同 Bybit 帳戶(或子帳戶)的 API Key，從環境變數中讀取
 API_KEY_1 = os.getenv("BYBITAPIKEY1")
 API_SECRET_1 = os.getenv("APISECRET1")
 
-# 設定 logger
 log_dir = "log"
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -27,60 +31,62 @@ logger = logging.getLogger(__name__)
 def main():
     session1 = HTTP(api_key=API_KEY_1, api_secret=API_SECRET_1)
     symbol = os.getenv("SYMBOL")  
-    leverageResult = session1.set_leverage(category="linear", symbol=symbol, buyLeverage = "1", sellLeverage = "1")
-    print("leverageResult", leverageResult)
-    spotInstrumentsInfo = session1.get_instruments_info(category="spot", symbol=symbol)
-    spotTickSize = float(spotInstrumentsInfo['result']['list'][0]['priceFilter']['tickSize'])
-    spotMinOrderQty = float(spotInstrumentsInfo['result']['list'][0]['lotSizeFilter']['minOrderQty'])
-    spotMinOrderAmt = float(spotInstrumentsInfo['result']['list'][0]['lotSizeFilter']['minOrderAmt'])
 
-    linearInstrumentsInfo = session1.get_instruments_info(category="linear", symbol=symbol)
-    linearTickSize = float(linearInstrumentsInfo['result']['list'][0]['priceFilter']['tickSize'])
-    linearMinOrderQty = float(linearInstrumentsInfo['result']['list'][0]['lotSizeFilter']['minOrderQty'])
+    # leverageResult = session1.set_leverage(category="linear", symbol=symbol, buyLeverage = "1", sellLeverage = "1")
+    # print("leverageResult", leverageResult)
+
+    spotTickSize, spotMinOrderQty, spotMinOrderAmt = getSpotTradingParams(session1, symbol)
+    linearTickSize, linearMinOrderQty, minNotionalValue, qtyStep = getLinearTradingParams(session1, symbol)
 
     logger.info(f"linearTickSize: {linearTickSize}")
     logger.info(f"spotTickSize: {spotTickSize}")
+    logger.info(f"spotMinOrderQty: {spotMinOrderQty}")
+    logger.info(f"linearMinOrderQty: {linearMinOrderQty}")
+    
     while True:
-        #sell linear
-        linearOrderBookData = session1.get_orderbook(category="linear", symbol=symbol)
+        # Get order book data using utility functions
+        linearBestBid, linearBestBidVol, linearBestAsk, linearBestAskVol = getLinearOrderBookData(session1, symbol)
+        spotBestBid, spotBestBidVol, spotBestAsk, spotBestAskVol = getSpotOrderBookData(session1, symbol)
+        
+        # Log the order book data
+        logger.info(f"LINEAR: bestBid: {linearBestBid}, bestBidVol: {linearBestBidVol}, bestAsk: {linearBestAsk}, bestAskVol: {linearBestAskVol}")
+        logger.info(f"SPOT:   bestBid: {spotBestBid}, bestBidVol: {spotBestBidVol}, bestAsk: {spotBestAsk}, bestAskVol: {spotBestAskVol}")
 
-        #buy spot
-        spotOrderBookData = session1.get_orderbook(category="spot", symbol=symbol)
+        # Calculate the maximum quantity that can be traded (minimum of available volumes)
+        qty = decimal.Decimal((math.floor(min(linearBestBidVol, spotBestAskVol)) // qtyStep) * qtyStep)
 
-        #get linear order book
-        linearBestBid = decimal.Decimal(linearOrderBookData['result']['b'][0][0])
-        linearBestBidVol = decimal.Decimal(linearOrderBookData['result']['b'][0][1])
-        linearBestAsk = decimal.Decimal(linearOrderBookData['result']['a'][0][0])
-        linearBestAskVol = decimal.Decimal(linearOrderBookData['result']['a'][0][1])
+        slippagePercentage = decimal.Decimal(0.005)
+        slippageValue = linearBestAsk * slippagePercentage
 
-        logger.info(f"SPOT:   bestBid: {linearBestBid}, bestBidVol: {linearBestBidVol}, bestAsk: {linearBestAsk}, bestAskVol: {linearBestAskVol}")
-
-        #get spot order book
-        spotBestBid = decimal.Decimal(spotOrderBookData['result']['b'][0][0])
-        spotBestBidVol = decimal.Decimal(spotOrderBookData['result']['b'][0][1])
-        spotBestAsk = decimal.Decimal(spotOrderBookData['result']['a'][0][0])
-        spotBestAskVol = decimal.Decimal(spotOrderBookData['result']['a'][0][1])
-
-        logger.info(f"LINEAR: bestBid: {spotBestBid}, bestBidVol: {spotBestBidVol}, bestAsk: {spotBestAsk}, bestAskVol: {spotBestAskVol}")
-
-        qty = min(linearBestBidVol, spotBestAskVol)
-
-        slippagePercentage = decimal.Decimal(0.005)  # 定義滑點百分比，例如 0.5%
-        slippageValue = linearBestAsk * slippagePercentage  # 計算滑點值
-
+        # Get USDT balance from wallet
         symbolWalletBalance1USDT = decimal.Decimal(getSymbolBalance(session1, "USDT"))
         logger.info(f"symbolWalletBalanceUSDT: {symbolWalletBalance1USDT}")
 
+        # Calculate buy and sell prices with slight adjustments to ensure order execution
         buyPrice = spotBestAsk + decimal.Decimal(str(spotTickSize))
         sellPrice = linearBestBid - decimal.Decimal(str(linearTickSize))
         logger.info(f"buyPrice: {buyPrice}")
         logger.info(f"sellPrice: {sellPrice}")
-        logger.info("===========================")  #TODO Get account balance
-        if (abs(linearBestAsk - spotBestBid) < slippageValue and            
-            qty > spotMinOrderQty and  
-            qty > linearMinOrderQty and
-            symbolWalletBalance1USDT > ((qty * spotBestAsk) + (qty * linearBestBid))):
-            print("match!")
+        logger.info(f"qty: {qty}")
+
+        logger.info("===========================")
+
+        # logger.info(f"qty * spotBestAsk: {qty * spotBestAsk}")
+        # logger.info(f"qty * linearBestBid: {qty * linearBestBid}")
+
+        # Define condition variables with meaningful names
+        isPriceGapAcceptable = abs(linearBestAsk - spotBestBid) < slippageValue
+        isSpotQtySufficient = qty > spotMinOrderQty
+        isLinearQtySufficient = qty * linearBestBid > minNotionalValue
+        isBalanceSufficient = symbolWalletBalance1USDT > ((qty * spotBestAsk) + (qty * linearBestBid))
+        
+        # Check all conditions
+        if (isPriceGapAcceptable and 
+            isSpotQtySufficient and 
+            isLinearQtySufficient and 
+            isBalanceSufficient):
+            logger.info(f"match!")
+            # Execute spot market buy order
             session1.place_order(
                 category="spot",
                 symbol=symbol,
@@ -89,6 +95,9 @@ def main():
                 qty=qty,
                 price=buyPrice
             )
+            symbolWalletBalance1USDT = decimal.Decimal(getSymbolBalance(session1, "USDT"))
+            logger.info(f"symbolWalletBalanceUSDT: {symbolWalletBalance1USDT}")
+            # Execute linear perpetual swap sell order
             session1.place_order(
                 category="linear",
                 symbol=symbol,
@@ -97,8 +106,13 @@ def main():
                 qty=qty,
                 price=sellPrice
             )
+            symbolWalletBalance1USDT = decimal.Decimal(getSymbolBalance(session1, "USDT"))
+            logger.info(f"symbolWalletBalanceUSDT: {symbolWalletBalance1USDT}")
+            # Log the executed arbitrage trade details
             logger.info(f"buyPrice: {buyPrice}, sellPrice: {sellPrice}, qty: {qty}")
-            time.sleep(500)
+            logger.info("----------------------------")  #TODO Get account balance
+            # Wait for 500 seconds before checking for new opportunities
+            time.sleep(50)
 
 if __name__ == "__main__":
     main()
